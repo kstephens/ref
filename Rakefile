@@ -30,14 +30,59 @@ spec = eval(File.read(File.expand_path('../ref.gemspec', __FILE__)))
 Rake::GemPackageTask.new(spec) do |p|
   p.gem_spec = spec
 end
-Rake.application["package"].prerequisites.unshift("java:build")
-Rake.application["package"].prerequisites.unshift("rbx:delete_rbc_files")
+Rake.application["package"].prerequisites.instance_eval do
+  unshift("mri:build")
+  unshift("java:build")
+  unshift("rbx:delete_rbc_files")
+end
 
 desc "Release to rubygems.org"
 task :release => :package do
   require 'rake/gemcutter'
   Rake::Gemcutter::Tasks.new(spec).define
   Rake::Task['gem:push'].invoke
+end
+
+namespace :mri do
+  desc "Patch MRI source"
+  task :patch do
+    base_dir = File.expand_path(File.dirname(__FILE__))
+    src_dir = ENV['src_dir'] or raise "Must define src_dir"
+    src_dir = File.expand_path(src_dir)
+    File.read("#{src_dir}/version.h") =~ %r{\bRUBY_VERSION\s+"(\d+\.\d+)} # "
+    ruby_version = $1
+    patch_applied = false
+
+    patch_file = "#{base_dir}/patch/mri-gc_api.patch"
+    puts "Applying #{patch_file} to #{src_dir}"
+    if ! ENV['force'] && File.exists?(file = "#{src_dir}/gc_api.c")
+      puts "#{file} already exists"
+    else
+      raise "#{patch_file} not found" unless File.exist?(patch_file)
+      sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
+      patch_applied = true
+    end
+
+    patch_file = "#{base_dir}/patch/mri-#{ruby_version}-gc_api.patch"
+    puts "Applying #{patch_file} to #{src_dir}"
+    if ! ENV['force'] && ! File.read(file = "#{src_dir}/gc.c").grep(/rb_gc_invoke_callbacks/).empty?
+      puts "#{file} already has rb_gc_invoke_callbacks"
+    else
+      raise "#{patch_file} not found" unless File.exist?(patch_file)
+      sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
+      patch_applied = true
+    end
+
+    if patch_applied
+      sh "(cd #{src_dir} && make clean; make; make install; make test)"
+    end
+  end
+
+  desc "Build the dynamic libraries for MRI."
+  task :build do
+    sh "cd ext && ruby extconf.rb"
+    sh "cd ext && make"
+  end
 end
 
 namespace :java do

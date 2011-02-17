@@ -1,0 +1,317 @@
+diff --git a/common.mk b/common.mk
+index a57cc9b..77e9dfb 100644
+--- a/common.mk
++++ b/common.mk
+@@ -33,6 +33,7 @@ OBJS	      = array.$(OBJEXT) \
+ 		eval.$(OBJEXT) \
+ 		file.$(OBJEXT) \
+ 		gc.$(OBJEXT) \
++		gc_api.$(OBJEXT) \
+ 		hash.$(OBJEXT) \
+ 		inits.$(OBJEXT) \
+ 		io.$(OBJEXT) \
+@@ -397,7 +398,13 @@ file.$(OBJEXT): {$(VPATH)}file.c {$(VPATH)}ruby.h config.h \
+ gc.$(OBJEXT): {$(VPATH)}gc.c {$(VPATH)}ruby.h config.h \
+   {$(VPATH)}defines.h {$(VPATH)}intern.h {$(VPATH)}missing.h \
+   {$(VPATH)}rubysig.h {$(VPATH)}st.h {$(VPATH)}node.h \
+-  {$(VPATH)}env.h {$(VPATH)}re.h {$(VPATH)}regex.h
++  {$(VPATH)}env.h {$(VPATH)}re.h {$(VPATH)}regex.h \
++  {$(VPATH)}gc_api.h
++gc_api.$(OBJEXT): {$(VPATH)}gc.c {$(VPATH)}ruby.h config.h \
++  {$(VPATH)}defines.h {$(VPATH)}intern.h {$(VPATH)}missing.h \
++  {$(VPATH)}rubysig.h {$(VPATH)}st.h {$(VPATH)}node.h \
++  {$(VPATH)}env.h {$(VPATH)}re.h {$(VPATH)}regex.h \
++  {$(VPATH)}gc_api.h
+ hash.$(OBJEXT): {$(VPATH)}hash.c {$(VPATH)}ruby.h config.h \
+   {$(VPATH)}defines.h {$(VPATH)}intern.h {$(VPATH)}missing.h \
+   {$(VPATH)}st.h {$(VPATH)}util.h {$(VPATH)}rubysig.h
+diff --git a/gc.c b/gc.c
+index fa45cd1..b2c933b 100644
+--- a/gc.c
++++ b/gc.c
+@@ -18,6 +18,7 @@
+ #include "node.h"
+ #include "env.h"
+ #include "re.h"
++#include "gc_api.h"
+ #include <stdio.h>
+ #include <setjmp.h>
+ #include <sys/types.h>
+@@ -1134,6 +1135,8 @@ gc_sweep()
+     unsigned long live = 0;
+     unsigned long free_min = 0;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_BEFORE); 
++
+     for (i = 0; i < heaps_used; i++) {
+         free_min += heaps[i].limit;
+     }
+@@ -1216,10 +1219,14 @@ gc_sweep()
+     }
+     malloc_increase = 0;
+     if (freed < free_min) {
++	rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_BEFORE);
+ 	add_heap();
++	rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_AFTER);
+     }
+     during_gc = 0;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_AFTER); 
++
+     /* clear finalization list */
+     if (final_list) {
+ 	deferred_final_list = final_list;
+@@ -1230,7 +1237,9 @@ gc_sweep()
+ 	    rb_thread_pending = 1;
+ 	}
+ 	if (!freelist) {
++            rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_BEFORE);
+ 	    add_heap();
++            rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_AFTER);
+ 	}
+ 	return;
+     }
+@@ -1440,13 +1449,20 @@ garbage_collect()
+ #endif
+     if (dont_gc || during_gc) {
+ 	if (!freelist) {
++            rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_BEFORE);
+ 	    add_heap();
++            rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_AFTER);
+ 	}
+ 	return;
+     }
+     if (during_gc) return;
+     during_gc++;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_START, RB_GC_PHASE_BEFORE);
++    rb_gc_invoke_callbacks(RB_GC_PHASE_START, RB_GC_PHASE_AFTER);
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_MARK, RB_GC_PHASE_BEFORE);
++
+     init_mark_stack();
+ 
+     gc_mark((VALUE)ruby_current_node, 0);
+@@ -1521,7 +1537,12 @@ garbage_collect()
+ 	rb_gc_abort_threads();
+     } while (!MARK_STACK_EMPTY);
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_MARK, RB_GC_PHASE_AFTER);
++
+     gc_sweep();
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_END, RB_GC_PHASE_BEFORE);
++    rb_gc_invoke_callbacks(RB_GC_PHASE_END, RB_GC_PHASE_AFTER);
+ }
+ 
+ void
+@@ -1979,10 +2000,15 @@ rb_gc_finalize_deferred()
+     RVALUE *p = deferred_final_list;
+ 
+     deferred_final_list = 0;
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_FINALIZE, RB_GC_PHASE_BEFORE);
++
+     if (p) {
+ 	finalize_list(p);
+ 	free_unused_heaps();
+     }
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_FINALIZE, RB_GC_PHASE_AFTER);
+ }
+ 
+ void
+@@ -1991,6 +2017,8 @@ rb_gc_call_finalizer_at_exit()
+     RVALUE *p, *pend;
+     int i;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_FINALIZE, RB_GC_PHASE_BEFORE);
++ 
+     /* run finalizers */
+     if (need_call_final && finalizer_table) {
+ 	p = deferred_final_list;
+@@ -2033,6 +2061,11 @@ rb_gc_call_finalizer_at_exit()
+ 	    p++;
+ 	}
+     }
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_FINALIZE, RB_GC_PHASE_AFTER);
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_AT_EXIT, RB_GC_PHASE_BEFORE);
++    rb_gc_invoke_callbacks(RB_GC_PHASE_AT_EXIT, RB_GC_PHASE_AFTER);
+ }
+ 
+ /*
+diff --git a/gc_api.c b/gc_api.c
+new file mode 100644
+index 0000000..01ed9c5
+--- /dev/null
++++ b/gc_api.c
+@@ -0,0 +1,87 @@
++/**********************************************************************
++
++  gc_api.c - GC internals API.
++
++  Author: Kurt Stephens
++  created at: Mon Jan 17 12:09:32 CST 2011
++
++  Copyright (C) 2011 Kurt Stephens, Enova Financial
++*/
++
++#include "ruby.h"
++#ifdef RUBY_RUBY_H /* ! MRI 1.8 */
++#include "ruby/gc_api.h"
++#else
++#include "gc_api.h"
++#endif
++#include <stdlib.h>
++
++typedef struct rb_gc_callback {
++  struct rb_gc_callback *next, *prev;
++  enum rb_gc_phase phase;
++  enum rb_gc_phase_location location;
++  void (*func)(void *, void*);
++  void *func_data;
++} rb_gc_callback;
++
++static rb_gc_callback callbacks[rb_gc_phase__LAST][rb_gc_phase_location__LAST];
++
++void *rb_gc_add_callback(enum rb_gc_phase phase, enum rb_gc_phase_location location, void (*func)(void *callback, void *func_data), void *func_data)
++{
++  rb_gc_callback *cb = xmalloc(sizeof(*cb));
++  cb->phase = phase;
++  cb->location = location;
++  cb->func = func;
++  cb->func_data = func_data;
++  {
++    rb_gc_callback *pos = &callbacks[phase][location];
++    /* Initialize linked list head. */
++    if ( ! pos->next )
++      pos->next = pos->prev = pos;
++    pos = pos->prev;
++    cb->prev = pos;
++    cb->next = pos->next;
++    pos->next->prev = cb;
++    pos->next = cb;
++  }
++  return cb;
++}
++
++void rb_gc_remove_callback(void *callback)
++{
++  rb_gc_callback *cb = callback;
++  cb->func = 0; /* guard. */
++  cb->next->prev = cb->prev;
++  cb->prev->next = cb->next;
++  xfree(cb);
++}
++
++void rb_gc_set_callback_func(void *callback, void *func)
++{
++  rb_gc_callback *cb = callback;
++  cb->func = func;
++}
++
++void rb_gc_invoke_callbacks(enum rb_gc_phase phase, enum rb_gc_phase_location location)
++{
++  rb_gc_callback *end = &callbacks[phase][location]; 
++  rb_gc_callback *cb = end->next;
++  int zero_words[128];
++  /* Uninitialized and empty linked list head. */
++  if ( cb && cb != end ) {
++    int func_called = 0;
++    do {
++      /* Callback func may invoke rb_gc_remove_callback() on itself. */
++      rb_gc_callback *cb_next = cb->next; 
++      if ( cb->func ) {
++	func_called = 1;
++	cb->func(cb, cb->func_data);
++      }
++      cb = cb_next;
++    } while ( cb != end );
++    /* Avoid garbage on stack. */
++    if ( func_called ) 
++      memset(zero_words, 0, sizeof(zero_words));
++  }
++}
++
+diff --git a/gc_api.h b/gc_api.h
+new file mode 100644
+index 0000000..8c379dd
+--- /dev/null
++++ b/gc_api.h
+@@ -0,0 +1,74 @@
++/**********************************************************************
++
++  gc_api.h - GC internals API.
++
++  $Author$
++  created at: Mon Jan 17 12:09:32 CST 2011
++
++  Copyright (C) 2010 Kurt Stephens
++
++**********************************************************************/
++#ifndef RUBY_GC_API_H
++#define RUBY_GC_API_H
++
++#if defined(__cplusplus)
++extern "C" {
++#if 0
++} /* satisfy cc-mode */
++#endif
++#endif
++
++#include "ruby/defines.h"
++#ifdef RUBY_EXTCONF_H
++#include RUBY_EXTCONF_H
++#endif
++
++#if defined __GNUC__ && __GNUC__ >= 4
++#pragma GCC visibility push(default)
++#endif
++
++void rb_gc_mark(VALUE);
++
++#ifndef RB_GC_MARKED
++#define RB_GC_MARKED(X) FL_TEST((X), FL_MARK)
++#endif
++
++enum rb_gc_phase {
++  RB_GC_PHASE_NONE = 0,
++  RB_GC_PHASE_STRESS,
++  RB_GC_PHASE_ALLOC,
++  RB_GC_PHASE_START,
++  RB_GC_PHASE_MARK,
++  RB_GC_PHASE_SWEEP,
++  RB_GC_PHASE_FINALIZE,
++  RB_GC_PHASE_END,
++  RB_GC_PHASE_AT_EXIT,
++  rb_gc_phase__LAST
++};
++enum rb_gc_phase_location {
++  RB_GC_PHASE_BEFORE = 0,
++  RB_GC_PHASE_AFTER,
++  rb_gc_phase_location__LAST
++};
++
++/*
++ * GC callback API.
++ */
++/* Returns an opaque callback struct. */
++void *rb_gc_add_callback(enum rb_gc_phase phase, enum rb_gc_phase_location location, void (*func)(void *callback, void *func_data), void *func_data);
++void rb_gc_set_callback_func(void *callback, void *func);
++void rb_gc_remove_callback(void *callback);
++void rb_gc_invoke_callbacks(enum rb_gc_phase phase, enum rb_gc_phase_location location);
++
++#if defined __GNUC__ && __GNUC__ >= 4
++#pragma GCC visibility pop
++#endif
++
++#if defined(__cplusplus)
++#if 0
++{ /* satisfy cc-mode */
++#endif
++}  /* extern "C" { */
++#endif
++
++#endif

@@ -4,8 +4,8 @@ Gem::Specification.new do |s|
   s.summary = "Library that implements weak, soft, and strong references in Ruby."
   s.description = "Library that implements weak, soft, and strong references in Ruby that work across multiple runtimes (MRI, REE, YARV, Jruby, Rubinius, and IronRuby). Also includes implementation of maps/hashes that use references and a reference queue."
 
-  s.authors = ['Brian Durand']
-  s.email = ['bdurand@embellishedvisions.com']
+  s.authors = ['Brian Durand', 'Kurt Stephens']
+  s.email = ['bdurand@embellishedvisions.com', 'ks.ruby@kurtstephens.com']
   s.homepage = "http://github.com/bdurand/ref"
 
   s.files = ['README.rdoc', 'VERSION'] +  Dir.glob('lib/**/*'), Dir.glob('test/**/*'), Dir.glob('ext/**/*')

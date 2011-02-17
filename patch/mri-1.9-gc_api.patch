@@ -1,0 +1,195 @@
+diff --git a/gc.c b/gc.c
+index a8e7217..c464cc6 100644
+--- a/gc.c
++++ b/gc.c
+@@ -16,6 +16,7 @@
+ #include "ruby/re.h"
+ #include "ruby/io.h"
+ #include "ruby/util.h"
++#include "ruby/gc_api.h"
+ #include "eval_intern.h"
+ #include "vm_core.h"
+ #include "gc.h"
+@@ -1055,6 +1056,7 @@ rb_newobj(void)
+     }
+ 
+     if (UNLIKELY(ruby_gc_stress) && UNLIKELY(!ruby_disable_gc_stress)) {
++        rb_gc_invoke_callbacks(RB_GC_PHASE_STRESS, RB_GC_PHASE_BEFORE);
+ 	if (!garbage_collect(objspace)) {
+ 	    during_gc = 0;
+ 	    rb_memerror();
+@@ -1066,6 +1068,7 @@ rb_newobj(void)
+ 	    during_gc = 0;
+ 	    rb_memerror();
+ 	}
++        rb_gc_invoke_callbacks(RB_GC_PHASE_STRESS, RB_GC_PHASE_AFTER);
+     }
+ 
+     obj = (VALUE)freelist;
+@@ -1822,6 +1825,8 @@ add_freelist(rb_objspace_t *objspace, RVALUE *p)
+ static void
+ finalize_list(rb_objspace_t *objspace, RVALUE *p)
+ {
++    rb_gc_invoke_callbacks(RB_GC_PHASE_FINALIZE, RB_GC_PHASE_BEFORE);
++
+     while (p) {
+ 	RVALUE *tmp = p->as.free.next;
+ 	run_final(objspace, (VALUE)p);
+@@ -1840,6 +1845,8 @@ finalize_list(rb_objspace_t *objspace, RVALUE *p)
+ 	}
+ 	p = tmp;
+     }
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_FINALIZE, RB_GC_PHASE_AFTER);
+ }
+ 
+ static void
+@@ -1957,10 +1964,12 @@ ready_to_gc(rb_objspace_t *objspace)
+ {
+     if (dont_gc || during_gc) {
+ 	if (!freelist) {
++	    rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_BEFORE);
+             if (!heaps_increment(objspace)) {
+                 set_heaps_increment(objspace);
+                 heaps_increment(objspace);
+             }
++	    rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_AFTER);
+ 	}
+ 	return FALSE;
+     }
+@@ -1993,8 +2002,10 @@ after_gc_sweep(rb_objspace_t *objspace)
+     GC_PROF_SET_MALLOC_INFO;
+ 
+     if (objspace->heap.free_num < objspace->heap.free_min) {
++	rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_BEFORE);
+         set_heaps_increment(objspace);
+         heaps_increment(objspace);
++	rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_AFTER);
+     }
+ 
+     if (malloc_increase > malloc_limit) {
+@@ -2011,7 +2022,9 @@ lazy_sweep(rb_objspace_t *objspace)
+ {
+     struct heaps_slot *next;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_BEFORE);
+     heaps_increment(objspace);
++    rb_gc_invoke_callbacks(RB_GC_PHASE_ALLOC, RB_GC_PHASE_AFTER);
+     while (objspace->heap.sweep_slots) {
+         next = objspace->heap.sweep_slots->next;
+ 	slot_sweep(objspace, objspace->heap.sweep_slots);
+@@ -2027,12 +2040,16 @@ lazy_sweep(rb_objspace_t *objspace)
+ static void
+ rest_sweep(rb_objspace_t *objspace)
+ {
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_BEFORE);
++
+     if (objspace->heap.sweep_slots) {
+        while (objspace->heap.sweep_slots) {
+            lazy_sweep(objspace);
+        }
+        after_gc_sweep(objspace);
+     }
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_AFTER);
+ }
+ 
+ static void gc_marks(rb_objspace_t *objspace);
+@@ -2066,6 +2083,8 @@ gc_lazy_sweep(rb_objspace_t *objspace)
+ 
+     gc_marks(objspace);
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_BEFORE);
++
+     before_gc_sweep(objspace);
+     if (objspace->heap.free_min > (heaps_used * HEAP_OBJ_LIMIT - objspace->heap.live_num)) {
+ 	set_heaps_increment(objspace);
+@@ -2082,6 +2101,9 @@ gc_lazy_sweep(rb_objspace_t *objspace)
+     GC_PROF_SWEEP_TIMER_STOP;
+ 
+     GC_PROF_TIMER_STOP(Qtrue);
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_AFTER);
++
+     return res;
+ }
+ 
+@@ -2090,6 +2112,8 @@ gc_sweep(rb_objspace_t *objspace)
+ {
+     struct heaps_slot *next;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_BEFORE);
++
+     before_gc_sweep(objspace);
+ 
+     while (objspace->heap.sweep_slots) {
+@@ -2101,6 +2125,8 @@ gc_sweep(rb_objspace_t *objspace)
+     after_gc_sweep(objspace);
+ 
+     during_gc = 0;
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_SWEEP, RB_GC_PHASE_AFTER);
+ }
+ 
+ void
+@@ -2332,6 +2358,7 @@ gc_marks(rb_objspace_t *objspace)
+     struct gc_list *list;
+     rb_thread_t *th = GET_THREAD();
+     GC_PROF_MARK_TIMER_START;
++    rb_gc_invoke_callbacks(RB_GC_PHASE_MARK, RB_GC_PHASE_BEFORE);
+ 
+     objspace->heap.live_num = 0;
+     objspace->count++;
+@@ -2374,21 +2401,27 @@ gc_marks(rb_objspace_t *objspace)
+ 	    gc_mark_rest(objspace);
+ 	}
+     }
++    rb_gc_invoke_callbacks(RB_GC_PHASE_MARK, RB_GC_PHASE_AFTER);
+     GC_PROF_MARK_TIMER_STOP;
+ }
+ 
+ static int
+ garbage_collect(rb_objspace_t *objspace)
+ {
++    int result = TRUE;
+     INIT_GC_PROF_PARAMS;
+ 
++    rb_gc_invoke_callbacks(RB_GC_PHASE_START, RB_GC_PHASE_BEFORE);
+     if (GC_NOTIFY) printf("start garbage_collect()\n");
++    rb_gc_invoke_callbacks(RB_GC_PHASE_START, RB_GC_PHASE_AFTER);
+ 
+     if (!heaps) {
+-	return FALSE;
++	result = FALSE;
++	goto rtn;
+     }
+     if (!ready_to_gc(objspace)) {
+-        return TRUE;
++	result = TRUE;
++	goto rtn;
+     }
+ 
+     GC_PROF_TIMER_START;
+@@ -2401,8 +2434,11 @@ garbage_collect(rb_objspace_t *objspace)
+     GC_PROF_SWEEP_TIMER_STOP;
+ 
+     GC_PROF_TIMER_STOP(Qtrue);
++ rtn:
++    rb_gc_invoke_callbacks(RB_GC_PHASE_END, RB_GC_PHASE_BEFORE);
+     if (GC_NOTIFY) printf("end garbage_collect()\n");
+-    return TRUE;
++    rb_gc_invoke_callbacks(RB_GC_PHASE_END, RB_GC_PHASE_AFTER);
++    return result;
+ }
+ 
+ int
+@@ -2886,6 +2922,9 @@ void
+ rb_gc_call_finalizer_at_exit(void)
+ {
+     rb_objspace_call_finalizer(&rb_objspace);
++
++    rb_gc_invoke_callbacks(RB_GC_PHASE_AT_EXIT, RB_GC_PHASE_BEFORE);
++    rb_gc_invoke_callbacks(RB_GC_PHASE_AT_EXIT, RB_GC_PHASE_AFTER);
+ }
+ 
+ static void
