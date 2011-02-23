@@ -37,7 +37,7 @@ class SoftReferenceTest < ReferenceTest
     run_gc!(:gc_n => 1, :clear => :o)
     r.each do | ref |
       assert ref.object
-      when_mri { assert_equal ref._mri_gc_ttl - 1, ref._mri_gc_left }
+      when_mri { assert ref._mri_gc_left <= ref._mri_gc_ttl }
     end
     when_mri { assert_equal n_objects, cached_instance_count }
   end

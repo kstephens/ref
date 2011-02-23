@@ -2,3 +2,6 @@ pkg
 tmp
 rdoc
 *.rbc
+ext/Makefile
+ext/*.bundle
+ext/*.o

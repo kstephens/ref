@@ -1,6 +1,13 @@
 require 'test/unit'
 require 'reference'
 
+begin
+  if expr = ENV['REF_TEST_PRE_EVAL']
+    $stderr.puts "#{__FILE__}: #{expr}"
+    eval expr
+  end
+end
+
 class ReferenceTest < Test::Unit::TestCase
   include Reference
   attr_accessor :n, :o, :oid, :r

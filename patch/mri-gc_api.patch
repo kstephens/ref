@@ -1,38 +1,9 @@
-diff --git a/common.mk b/common.mk
-index bb40b27..125b4d4 100644
---- a/common.mk
-+++ b/common.mk
-@@ -44,6 +44,7 @@ COMMONOBJS    = array.$(OBJEXT) \
- 		proc.$(OBJEXT) \
- 		file.$(OBJEXT) \
- 		gc.$(OBJEXT) \
-+		gc_api.$(OBJEXT) \
- 		hash.$(OBJEXT) \
- 		inits.$(OBJEXT) \
- 		io.$(OBJEXT) \
-@@ -524,7 +525,7 @@ win32.$(OBJEXT): {$(VPATH)}win32.c $(RUBY_H_INCLUDES)
- 
- RUBY_H_INCLUDES    = {$(VPATH)}ruby.h {$(VPATH)}config.h {$(VPATH)}defines.h \
- 		     {$(VPATH)}intern.h {$(VPATH)}missing.h {$(VPATH)}st.h \
--		     {$(VPATH)}subst.h
-+		     {$(VPATH)}subst.h {$(VPATH)}gc_api.h
- ENCODING_H_INCLUDES= {$(VPATH)}encoding.h {$(VPATH)}oniguruma.h
- ID_H_INCLUDES      = {$(VPATH)}id.h
- VM_CORE_H_INCLUDES = {$(VPATH)}vm_core.h {$(VPATH)}vm_opts.h \
-@@ -566,6 +567,7 @@ gc.$(OBJEXT): {$(VPATH)}gc.c $(RUBY_H_INCLUDES) {$(VPATH)}re.h \
-   {$(VPATH)}regex.h $(ENCODING_H_INCLUDES) $(VM_CORE_H_INCLUDES) \
-   {$(VPATH)}gc.h {$(VPATH)}io.h {$(VPATH)}eval_intern.h {$(VPATH)}util.h \
-   {$(VPATH)}debug.h
-+gc_api.$(OBJEXT): {$(VPATH)}gc_api.c $(RUBY_H_INCLUDES)
- hash.$(OBJEXT): {$(VPATH)}hash.c $(RUBY_H_INCLUDES) {$(VPATH)}util.h
- inits.$(OBJEXT): {$(VPATH)}inits.c $(RUBY_H_INCLUDES)
- io.$(OBJEXT): {$(VPATH)}io.c $(RUBY_H_INCLUDES) {$(VPATH)}io.h \
-diff --git a/gc_api.c b/gc_api.c
+diff --git a/source/gc_api.c b/source/gc_api.c
 new file mode 100644
-index 0000000..780f74f
+index 0000000..01ed9c5
 --- /dev/null
-+++ b/gc_api.c
-@@ -0,0 +1,83 @@
++++ b/source/gc_api.c
+@@ -0,0 +1,87 @@
 +/**********************************************************************
 +
 +  gc_api.c - GC internals API.
@@ -43,8 +14,12 @@ index 0000000..780f74f
 +  Copyright (C) 2011 Kurt Stephens, Enova Financial
 +*/
 +
-+#include "ruby/ruby.h"
++#include "ruby.h"
++#ifdef RUBY_RUBY_H /* ! MRI 1.8 */
 +#include "ruby/gc_api.h"
++#else
++#include "gc_api.h"
++#endif
 +#include <stdlib.h>
 +
 +typedef struct rb_gc_callback {
@@ -116,12 +91,12 @@ index 0000000..780f74f
 +  }
 +}
 +
-diff --git a/include/ruby/gc_api.h b/include/ruby/gc_api.h
+diff --git a/source/gc_api.h b/source/gc_api.h
 new file mode 100644
-index 0000000..8c379dd
+index 0000000..371c99e
 --- /dev/null
-+++ b/include/ruby/gc_api.h
-@@ -0,0 +1,74 @@
++++ b/source/gc_api.h
+@@ -0,0 +1,80 @@
 +/**********************************************************************
 +
 +  gc_api.h - GC internals API.
@@ -152,6 +127,12 @@ index 0000000..8c379dd
 +#endif
 +
 +void rb_gc_mark(VALUE);
++
++#ifdef MBARI_API
++/* #warning "Using REE/MBARI rb_mark_table_contains" */
++extern int rb_gc_markedQ(VALUE object);
++#define RB_GC_MARKED(X) (FL_ABLE((X)) ? rb_gc_markedQ((X)) : 0)
++#endif
 +
 +#ifndef RB_GC_MARKED
 +#define RB_GC_MARKED(X) FL_TEST((X), FL_MARK)

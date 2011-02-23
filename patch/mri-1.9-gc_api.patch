@@ -1,3 +1,32 @@
+diff --git a/common.mk b/common.mk
+index bb40b27..125b4d4 100644
+--- a/common.mk
++++ b/common.mk
+@@ -44,6 +44,7 @@ COMMONOBJS    = array.$(OBJEXT) \
+ 		proc.$(OBJEXT) \
+ 		file.$(OBJEXT) \
+ 		gc.$(OBJEXT) \
++		gc_api.$(OBJEXT) \
+ 		hash.$(OBJEXT) \
+ 		inits.$(OBJEXT) \
+ 		io.$(OBJEXT) \
+@@ -524,7 +525,7 @@ win32.$(OBJEXT): {$(VPATH)}win32.c $(RUBY_H_INCLUDES)
+ 
+ RUBY_H_INCLUDES    = {$(VPATH)}ruby.h {$(VPATH)}config.h {$(VPATH)}defines.h \
+ 		     {$(VPATH)}intern.h {$(VPATH)}missing.h {$(VPATH)}st.h \
+-		     {$(VPATH)}subst.h
++		     {$(VPATH)}subst.h {$(VPATH)}gc_api.h
+ ENCODING_H_INCLUDES= {$(VPATH)}encoding.h {$(VPATH)}oniguruma.h
+ ID_H_INCLUDES      = {$(VPATH)}id.h
+ VM_CORE_H_INCLUDES = {$(VPATH)}vm_core.h {$(VPATH)}vm_opts.h \
+@@ -566,6 +567,7 @@ gc.$(OBJEXT): {$(VPATH)}gc.c $(RUBY_H_INCLUDES) {$(VPATH)}re.h \
+   {$(VPATH)}regex.h $(ENCODING_H_INCLUDES) $(VM_CORE_H_INCLUDES) \
+   {$(VPATH)}gc.h {$(VPATH)}io.h {$(VPATH)}eval_intern.h {$(VPATH)}util.h \
+   {$(VPATH)}debug.h
++gc_api.$(OBJEXT): {$(VPATH)}gc_api.c $(RUBY_H_INCLUDES)
+ hash.$(OBJEXT): {$(VPATH)}hash.c $(RUBY_H_INCLUDES) {$(VPATH)}util.h
+ inits.$(OBJEXT): {$(VPATH)}inits.c $(RUBY_H_INCLUDES)
+ io.$(OBJEXT): {$(VPATH)}io.c $(RUBY_H_INCLUDES) {$(VPATH)}io.h \
 diff --git a/gc.c b/gc.c
 index a8e7217..c464cc6 100644
 --- a/gc.c

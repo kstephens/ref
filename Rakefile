@@ -46,42 +46,74 @@ end
 namespace :mri do
   desc "Patch MRI source"
   task :patch do
-    base_dir = File.expand_path(File.dirname(__FILE__))
-    src_dir = ENV['src_dir'] or raise "Must define src_dir"
-    src_dir = File.expand_path(src_dir)
-    File.read("#{src_dir}/version.h") =~ %r{\bRUBY_VERSION\s+"(\d+\.\d+)} # "
-    ruby_version = $1
-    patch_applied = false
-
-    patch_file = "#{base_dir}/patch/mri-gc_api.patch"
-    puts "Applying #{patch_file} to #{src_dir}"
-    if ! ENV['force'] && File.exists?(file = "#{src_dir}/gc_api.c")
-      puts "#{file} already exists"
-    else
-      raise "#{patch_file} not found" unless File.exist?(patch_file)
-      sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
-      patch_applied = true
-    end
-
-    patch_file = "#{base_dir}/patch/mri-#{ruby_version}-gc_api.patch"
-    puts "Applying #{patch_file} to #{src_dir}"
-    if ! ENV['force'] && ! File.read(file = "#{src_dir}/gc.c").grep(/rb_gc_invoke_callbacks/).empty?
-      puts "#{file} already has rb_gc_invoke_callbacks"
-    else
-      raise "#{patch_file} not found" unless File.exist?(patch_file)
-      sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
-      patch_applied = true
-    end
-
-    if patch_applied
-      sh "(cd #{src_dir} && make clean; make; make install; make test)"
-    end
+    apply_patches
   end
 
   desc "Build the dynamic libraries for MRI."
   task :build do
     sh "cd ext && ruby extconf.rb"
     sh "cd ext && make"
+  end
+end
+
+namespace :ree do
+  desc "Patch MRI source"
+  task :patch do
+    apply_patches :ree, "#{ENV['src_dir']}/source"
+  end
+
+  desc "Build the dynamic libraries for MRI."
+  task :build do
+    sh "cd ext && ruby extconf.rb"
+    sh "cd ext && make"
+  end
+end
+
+def apply_patches ruby_impl = :mri, src_dir = nil
+  base_dir = File.expand_path(File.dirname(__FILE__))
+  src_dir ||= ENV['src_dir'] or raise "Must define src_dir"
+  src_dir = File.expand_path(src_dir)
+  File.read("#{src_dir}/version.h") =~ %r{\bRUBY_VERSION\s+"(\d+\.\d+)} # "
+  ruby_version = $1
+  patch_applied = false
+  
+  patch_file = "#{base_dir}/patch/mri-gc_api.patch"
+  puts "Applying #{patch_file} to #{src_dir}"
+  if ! ENV['force'] && File.exists?(file = "#{src_dir}/gc_api.c")
+    puts "#{file} already exists"
+  else
+    raise "#{patch_file} not found" unless File.exist?(patch_file)
+    sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
+    patch_applied = true
+  end
+  
+  # Move gc_api.h into include/ruby.
+  if File.directory?(inc_dir = "#{src_dir}/include/ruby")
+    cp_p("#{src_dir}/gc_api.h", "#{inc_dir}/gc_api.h")
+  end
+  
+  patch_file = "#{base_dir}/patch/mri-#{ruby_version}-gc_api-common.mk.patch"
+  puts "Applying #{patch_file} to #{src_dir}"
+  if ! ENV['force'] && ! File.read(file = "#{src_dir}/common.mk").grep(/gc_api.c/).empty?
+    puts "#{file} already has gc_api.c"
+  else
+    raise "#{patch_file} not found" unless File.exist?(patch_file)
+    sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
+    patch_applied = true
+  end
+  
+  patch_file = "#{base_dir}/patch/#{ruby_impl}-#{ruby_version}-gc_api.patch"
+  puts "Applying #{patch_file} to #{src_dir}"
+  if ! ENV['force'] && ! File.read(file = "#{src_dir}/gc.c").grep(/rb_gc_invoke_callbacks/).empty?
+    puts "#{file} already has rb_gc_invoke_callbacks"
+  else
+    raise "#{patch_file} not found" unless File.exist?(patch_file)
+    sh "patch -b -N -p1 -d #{src_dir} < #{patch_file}"
+    patch_applied = true
+  end
+  
+  if patch_applied
+    sh "(cd #{src_dir} && make clean; make; make install; make test)"
   end
 end
 

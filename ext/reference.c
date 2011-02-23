@@ -10,8 +10,10 @@
 **********************************************************************/
 #include "ruby.h"
 #ifdef RUBY_RUBY_H /* ! MRI 1.8 */
+#include "ruby/config.h"
 #include "ruby/gc_api.h"
 #else
+#include "config.h"
 #include "gc_api.h"
 #include "st.h"
 typedef int st_index_t;
@@ -23,12 +25,16 @@ typedef int st_index_t;
 #define REFERENCE_DEBUG 0
 #endif
 
+#ifndef REFERENCE_CLASS_DEBUG
+#define REFERENCE_CLASS_DEBUG REFERENCE_DEBUG
+#endif
+
 #ifndef SOFT_REFERENCE_DEBUG
-#define SOFT_REFERENCE_DEBUG 0
+#define SOFT_REFERENCE_DEBUG REFERENCE_DEBUG
 #endif
 
 #ifndef REFERENCE_QUEUE_DEBUG
-#define REFERENCE_QUEUE_DEBUG REFERENCE_DEBUG
+#define REFERENCE_QUEUE_DEBUG 0
 #endif
 
 #ifndef CACHE_OBJECT_ID
@@ -124,6 +130,12 @@ ref_table_for_cls(st_table *base_table, VALUE cls)
   } else {
     ref_table = st_init_table(&ref_table_type);
     st_insert(base_table, (st_data_t) cls, (st_data_t) ref_table);
+#if REFERENCE_CLASS_DEBUG >= 1
+    fprintf(stderr, "  ref_table_for_cls(cls %p \"%s\"): new ref_table %p\n",
+	    (void*) cls,
+	    (char *) rb_class2name(cls),
+	    (void*) ref_table);
+#endif
   }
   return ref_table;
 }
@@ -135,6 +147,11 @@ remove_dead_reference_class(st_data_t _cls, st_data_t _ref_table, st_data_t data
   VALUE cls = (VALUE) _cls;
   st_table *ref_table = (st_table*) _ref_table;
   if ( ! RB_GC_MARKED(cls) ) {
+#if REFERENCE_CLASS_DEBUG >= 1
+    fprintf(stderr, "  remove_dead_reference_class(cls %p \"%s\")\n",
+	    (void*) cls,
+	    (char *) rb_class2name(cls));
+#endif
     assert(ref_table->num_entries == 0);
     st_free_table(ref_table);
     ++ * (size_t*) data;
@@ -266,7 +283,7 @@ ref_free(void *ptr)
 {
   rb_reference *ref = RB_REFERENCE_CHECK(ptr);
 
-#if REFERENCE_DEBUG > 3
+#if REFERENCE_DEBUG >= 3
   fprintf(stderr, "  ref_free(ref %p): ref_table %p, ref_queues = %p N %ld\n", (void*) ref, (void*) ref->ref_table, (void*) ref->ref_queues, (unsigned long) n_refs_live);
 #endif
 
@@ -277,14 +294,14 @@ ref_free(void *ptr)
     if ( FL_ABLE(ref->object) ) {
       st_data_t key = (st_data_t) ref->object, value = 0;
       if ( ! st_delete(ref->ref_table, &key, &value) ) {
-#if REFERENCE_DEBUG > 4
+#if REFERENCE_DEBUG >= 4
 	fprintf(stderr, "    ref %p, object %p, ref_obj %p NOT DELETED from ref_table %p:\n      key=%p value=%p\n", 
 		(void*) ref, (void*) ref->object, (void*) ref->ref_object, (void*) ref->ref_table,
 		(void*) key, (void*) value);
 	ref_unexpected();
 #endif
       } else {
-#if REFERENCE_DEBUG > 4
+#if REFERENCE_DEBUG >= 4
 	fprintf(stderr, "    ref %p, object %p, ref_obj %p deleted from ref_table %p:\n      key=%p value=%p\n", 
 		(void*) ref, (void*) ref->object, (void*) ref->ref_object, (void*) ref->ref_table,
 		(void*) key, (void*) value);
@@ -406,7 +423,7 @@ ref_dereference(rb_reference *ref)
     ++ queued_refs_count;
     assert(queued_refs_count);
 
-#if REFERENCE_QUEUE_DEBUG > 2
+#if REFERENCE_QUEUE_DEBUG >= 3
     fprintf(stderr, "        has ref_queues %p scheduled %d\n", 
 	    (void*) ref->ref_queues, (int) queued_refs_count);
 #endif
@@ -794,7 +811,7 @@ weak_remove_dead_references(void *callback, void *func_data)
 #if REFERENCE_DEBUG > 0
   if ( n_released )
   fprintf(stderr, "  weak_remove_dead_references(): %lu released\n\n", 
-	  (unsigned long) n_released,
+	  (unsigned long) n_released
 	  );
 #endif
 }
@@ -1194,7 +1211,7 @@ m_reference_notify_reference_queues(VALUE ref_obj)
   if ( ref->notify_ref_queue ) {
     rb_ref_queue_list *ref_queues = ref->ref_queues;
 
-#if REFERENCE_QUEUE_DEBUG > 2
+#if REFERENCE_QUEUE_DEBUG >= 3
     fprintf(stderr, "    ref_notify_reference_queues(ref %p):\n", (void*) ref);
     fprintf(stderr, "      ref_obj = %p\n", (void*) ref->ref_object);
     fprintf(stderr, "      ref_queues = %p\n", (void*) ref_queues);
@@ -1207,12 +1224,12 @@ m_reference_notify_reference_queues(VALUE ref_obj)
       ref->ref_queues = ref_queues->next;
       xfree(ref_queues);
       
-#if REFERENCE_QUEUE_DEBUG > 3
+#if REFERENCE_QUEUE_DEBUG >= 4
       fprintf(stderr, "        ref_queue = %p: weak => \n", (void*) ref_queue);
 #endif
       /* Traverse Reference: ReferenceQueue may have been sweeped. */
       if ( ref_queue != Qnil && (ref_queue = rb_funcall(ref_queue, id_object, 0)) != Qnil ) {
-#if REFERENCE_QUEUE_DEBUG > 3
+#if REFERENCE_QUEUE_DEBUG >= 4
 	fprintf(stderr, "          ref_queue = %p: real\n", (void*) ref_queue);
 #endif
 	/* Push Reference onto Reference's ReferenceQueue. */
@@ -1234,6 +1251,9 @@ notify_reference_queues(void *callback, void *func_data)
   rb_reference *ref;
 
   while ( (ref = queued_refs) ) {
+#if REFERENCE_QUEUE_DEBUG >= 3
+    fprintf(stderr, "  notify_reference_queues(): ref %p, ref_object %p\n", (void*) ref, (void*) ref->ref_object);
+#endif
     rb_funcall(ref->ref_object, id__mri_notify_reference_queues, 0);
     assert(queued_refs_count);
     -- queued_refs_count;
