@@ -1,7 +1,7 @@
-diff --git a/source/gc.c b/source/gc.c
+diff --git a/gc.c b/gc.c
 index 9d2a264..942e2d1 100644
---- a/source/gc.c
-+++ b/source/gc.c
+--- a/gc.c
++++ b/gc.c
 @@ -18,6 +18,7 @@
  #include "node.h"
  #include "env.h"

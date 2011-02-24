@@ -1,8 +1,8 @@
-diff --git a/source/gc_api.c b/source/gc_api.c
+diff --git a/gc_api.c b/gc_api.c
 new file mode 100644
 index 0000000..01ed9c5
 --- /dev/null
-+++ b/source/gc_api.c
++++ b/gc_api.c
 @@ -0,0 +1,87 @@
 +/**********************************************************************
 +
@@ -91,12 +91,12 @@ index 0000000..01ed9c5
 +  }
 +}
 +
-diff --git a/source/gc_api.h b/source/gc_api.h
+diff --git a/gc_api.h b/gc_api.h
 new file mode 100644
 index 0000000..371c99e
 --- /dev/null
-+++ b/source/gc_api.h
-@@ -0,0 +1,80 @@
++++ b/gc_api.h
+@@ -0,0 +1,79 @@
 +/**********************************************************************
 +
 +  gc_api.h - GC internals API.
@@ -117,7 +117,6 @@ index 0000000..371c99e
 +#endif
 +#endif
 +
-+#include "ruby/defines.h"
 +#ifdef RUBY_EXTCONF_H
 +#include RUBY_EXTCONF_H
 +#endif
