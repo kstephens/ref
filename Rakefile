@@ -112,9 +112,11 @@ def apply_patches ruby_impl = :mri, src_dir = nil
     patch_applied = true
   end
   
+=begin
   if patch_applied
     sh "(cd #{src_dir} && make clean; make; make install; make test)"
   end
+=end
 end
 
 namespace :java do
